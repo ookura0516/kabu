@@ -37,8 +37,16 @@ void main() {
 
     expect(recommendations.length, lessThanOrEqualTo(2));
     for (final recommendation in recommendations) {
-      expect(recommendation.positionYen, inInclusiveRange(50000, 60000));
-      expect(recommendation.maxLossYen, closeTo(900, 0.01));
+      expect(recommendation.positionYen, lessThanOrEqualTo(60000));
+      expect(recommendation.maxLossYen, lessThanOrEqualTo(900));
     }
+  });
+
+  test('position size uses risk formula (900/1.5%=60000)', () {
+    final recommendations = RecommendationEngine().buildRecommendations(sampleStocks);
+
+    expect(recommendations, isNotEmpty);
+    expect(recommendations.first.positionYen, closeTo(60000, 0.01));
+    expect(recommendations.first.maxLossYen, closeTo(900, 0.01));
   });
 }

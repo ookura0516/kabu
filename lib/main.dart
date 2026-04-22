@@ -203,7 +203,7 @@ class RecommendationEngine {
 
   List<Recommendation> buildRecommendations(List<StockSnapshot> stocks) {
     final sizedPosition = maxLossPerTradeYen / (stopLossPercent / 100);
-    final positionYen = sizedPosition.clamp(50000, 60000).toDouble();
+    final positionYen = sizedPosition > 60000 ? 60000 : sizedPosition;
 
     final ranked = stocks
         .map((stock) => (stock: stock, judgement: judge(stock)))
