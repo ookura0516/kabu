@@ -1,17 +1,24 @@
 # kabu
 
-A new Flutter project.
+ルールベースで「決算前日引けIN → 決算当日前場引けOUT」の一般信用ショート候補を通知するFlutterアプリです。
 
-## Getting Started
+## 実装内容
 
-This project is a starting point for a Flutter application.
+- ルール1〜7に沿った候補判定ロジック（`RecommendationEngine`）
+- 口座30万円・許容損失900円・損切り+1.5%に基づく建玉計算
+- 通知候補（最大2銘柄）の表示
+- 当日撤退ルール（+1.5%損切り、+3%ギャップ撤退、10:30撤退、前場引け全決済）の明示
 
-A few resources to get you started if this is your first Flutter project:
+## 主要ルール（実装）
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- 銘柄フィルタ: 東証プライム、時価総額500億円以上、20日平均売買代金5億円以上、株価1,000〜8,000円、貸株料5%以下
+- エントリー条件: 20日+12%以上、5日+4%以上、20日線乖離+6%以上、RSI(14)65以上、高値→引け-1.5%以下、（可能なら）終値<VWAP
+- コスト条件: 往復コスト0.2%以内、権利付き最終日周辺と自社株買い傾向銘柄を除外
+- リスク制御: 1回の最大損失900円、建玉目安50,000〜60,000円、同時保有2銘柄まで
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 起動
+
+```bash
+flutter pub get
+flutter run
+```
