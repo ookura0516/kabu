@@ -1,30 +1,44 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kabu/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('judge returns recommended when all rules are satisfied', () {
+    const stock = StockSnapshot(
+      code: '1111',
+      name: 'テスト銘柄',
+      isPrimeMarket: true,
+      marketCapBillionYen: 1000,
+      avgTurnoverBillionYen20d: 10,
+      priceYen: 3500,
+      borrowFeeAnnualPercent: 2,
+      priceChange20dPercent: 13,
+      priceChange5dPercent: 5,
+      closeAboveMa20Percent: 7,
+      rsi14: 67,
+      pullbackFromHighToClosePercent: -1.6,
+      vwapAvailable: true,
+      isCloseBelowVwap: true,
+      hasWideSpread: false,
+      isSpeculativeSmallCap: false,
+      isExDividendWindow: false,
+      isInBuybackExclusionList: false,
+      roundTripCostPercent: 0.12,
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    final judgement = RecommendationEngine().judge(stock);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(judgement.isRecommended, isTrue);
+    expect(judgement.violations, isEmpty);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('buildRecommendations enforces max 2 symbols and risk cap', () {
+    final recommendations = RecommendationEngine().buildRecommendations(sampleStocks);
+
+    expect(recommendations.length, lessThanOrEqualTo(2));
+    for (final recommendation in recommendations) {
+      expect(recommendation.positionYen, inInclusiveRange(50000, 60000));
+      expect(recommendation.maxLossYen, closeTo(900, 0.01));
+    }
   });
 }
