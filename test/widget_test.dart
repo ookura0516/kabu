@@ -42,7 +42,7 @@ void main() {
     }
   });
 
-  test('position size uses risk formula (900/1.5%=60000)', () {
+  test('position size uses max-loss and stop-loss formula', () {
     final recommendations = RecommendationEngine().buildRecommendations(sampleStocks);
     final expectedPosition = RecommendationEngine.maxLossPerTradeYen /
         (RecommendationEngine.stopLossPercent / 100);

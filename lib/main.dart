@@ -70,13 +70,22 @@ class StrategySummaryCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text('前提', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Text('・日本株（東証）一般信用ショート'),
-            Text('・決算前日引けIN → 決算当日前場引けOUT'),
-            Text('・口座30万円 / 1回最大損失900円'),
-            Text('・損切り +1.5% / 建玉目安 50,000〜60,000円'),
+          children: [
+            const Text('前提',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('・日本株（東証）一般信用ショート'),
+            const Text('・決算前日引けIN → 決算当日前場引けOUT'),
+            Text(
+              '・口座${RecommendationEngine.accountSizeYen.toStringAsFixed(0)}円 '
+              '/ 1回最大損失${RecommendationEngine.maxLossPerTradeYen.toStringAsFixed(0)}円',
+            ),
+            Text(
+              '・損切り +${RecommendationEngine.stopLossPercent}% / '
+              '建玉目安 '
+              '${RecommendationEngine.recommendedMinPositionYen.toStringAsFixed(0)}'
+              '〜${RecommendationEngine.maxPositionYen.toStringAsFixed(0)}円',
+            ),
           ],
         ),
       ),
@@ -135,6 +144,7 @@ class RecommendationEngine {
   static const double maxLossPerTradeYen = 900;
   static const double stopLossPercent = 1.5;
   static const double maxBorrowFeePercent = 5;
+  static const double recommendedMinPositionYen = 50000;
   static const double maxPositionYen = 60000;
 
   CandidateJudgement judge(StockSnapshot stock) {
