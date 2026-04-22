@@ -135,6 +135,7 @@ class RecommendationEngine {
   static const double maxLossPerTradeYen = 900;
   static const double stopLossPercent = 1.5;
   static const double maxBorrowFeePercent = 5;
+  static const double maxPositionYen = 60000;
 
   CandidateJudgement judge(StockSnapshot stock) {
     final violations = <String>[];
@@ -203,7 +204,8 @@ class RecommendationEngine {
 
   List<Recommendation> buildRecommendations(List<StockSnapshot> stocks) {
     final sizedPosition = maxLossPerTradeYen / (stopLossPercent / 100);
-    final positionYen = sizedPosition > 60000 ? 60000 : sizedPosition;
+    final positionYen =
+        sizedPosition > maxPositionYen ? maxPositionYen : sizedPosition;
 
     final ranked = stocks
         .map((stock) => (stock: stock, judgement: judge(stock)))

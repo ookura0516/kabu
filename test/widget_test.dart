@@ -44,9 +44,16 @@ void main() {
 
   test('position size uses risk formula (900/1.5%=60000)', () {
     final recommendations = RecommendationEngine().buildRecommendations(sampleStocks);
+    final expectedPosition = RecommendationEngine.maxLossPerTradeYen /
+        (RecommendationEngine.stopLossPercent / 100);
 
     expect(recommendations, isNotEmpty);
-    expect(recommendations.first.positionYen, closeTo(60000, 0.01));
+    expect(expectedPosition, closeTo(60000, 0.01));
+    expect(recommendations.first.positionYen, closeTo(expectedPosition, 0.01));
+    expect(
+      recommendations.first.positionYen,
+      lessThanOrEqualTo(RecommendationEngine.maxPositionYen),
+    );
     expect(recommendations.first.maxLossYen, closeTo(900, 0.01));
   });
 }
