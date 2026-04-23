@@ -805,9 +805,8 @@ class CandidateJudgement {
   final double score;
 
   int get matchedRuleCount {
-    final violationCount = violations.length > RecommendationEngine.totalRules
-        ? RecommendationEngine.totalRules
-        : violations.length;
+    final violationCount =
+        violations.length.clamp(0, RecommendationEngine.totalRules);
     return RecommendationEngine.totalRules - violationCount;
   }
 }
@@ -828,6 +827,7 @@ class Recommendation {
   final String reason;
 }
 
+/// Returns `YYYY/MM/DD HH:mm`; when null, returns `未取得`.
 String formatDateTime(DateTime? dateTime) {
   if (dateTime == null) {
     return '未取得';
