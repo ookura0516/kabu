@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 void main() {
@@ -14,48 +16,370 @@ class KabuRuleApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),
-      home: const RecommendationPage(),
+      home: const RootPage(),
     );
   }
 }
 
-class RecommendationPage extends StatelessWidget {
-  const RecommendationPage({super.key});
+class RootPage extends StatefulWidget {
+  const RootPage({super.key});
+
+  @override
+  State<RootPage> createState() => _RootPageState();
+}
+
+class _RootPageState extends State<RootPage> {
+  late final KabuController _controller;
+  Timer? _scheduler;
+  int _selectedIndex = 0;
+
+  static const List<String> _titles = [
+    'おすすめ',
+    '手動取得',
+    '収益確認',
+    '設定',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = KabuController();
+    _controller.addListener(_onControllerChanged);
+    _scheduler = Timer.periodic(const Duration(minutes: 1), (_) {
+      _controller.runScheduledIfDue();
+    });
+  }
+
+  void _onControllerChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _scheduler?.cancel();
+    _controller.removeListener(_onControllerChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _fetchAll() {
+    _controller.fetchPrices();
+    _showResultSnackbar('株価を手動取得しました');
+  }
+
+  void _fetchMissingOnly() {
+    final updated = _controller.fetchPrices(onlyMissing: true);
+    if (updated == 0) {
+      _showResultSnackbar('未取得データはありません');
+      return;
+    }
+    _showResultSnackbar('未取得データを$updated件更新しました');
+  }
+
+  void _sendTestNotification() {
+    _controller.sendTestNotification();
+    _showResultSnackbar('通知テストを送信しました');
+  }
+
+  void _showResultSnackbar(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final engine = RecommendationEngine();
-    final recommendations = engine.buildRecommendations(sampleStocks);
+    final tabs = [
+      RecommendationTab(controller: _controller, onFetchAll: _fetchAll),
+      ManualFetchTab(
+        controller: _controller,
+        onFetchAll: _fetchAll,
+        onFetchMissing: _fetchMissingOnly,
+      ),
+      ProfitTab(controller: _controller),
+      SettingsTab(
+        controller: _controller,
+        onSendTestNotification: _sendTestNotification,
+      ),
+    ];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('決算ショート通知候補'),
+        title: Text(_titles[_selectedIndex]),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const StrategySummaryCard(),
-          const SizedBox(height: 16),
-          Text(
-            '通知候補（最大2銘柄）',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          if (recommendations.isEmpty)
-            const Card(
-              child: ListTile(
-                title: Text('本日の条件一致なし'),
-                subtitle: Text('ルール2を満たした銘柄のみ通知します。'),
-              ),
-            )
-          else
-            ...recommendations.map(
-              (item) => RecommendationCard(item: item),
-            ),
-          const SizedBox(height: 16),
-          const ExitRulesCard(),
+      body: IndexedStack(index: _selectedIndex, children: tabs),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        type: BottomNavigationBarType.fixed,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.recommend), label: 'おすすめ'),
+          BottomNavigationBarItem(icon: Icon(Icons.sync), label: '手動取得'),
+          BottomNavigationBarItem(icon: Icon(Icons.savings), label: '収益確認'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: '設定'),
         ],
       ),
+    );
+  }
+}
+
+class RecommendationTab extends StatelessWidget {
+  const RecommendationTab({
+    required this.controller,
+    required this.onFetchAll,
+    super.key,
+  });
+
+  final KabuController controller;
+  final VoidCallback onFetchAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const StrategySummaryCard(),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '通知候補（最大2銘柄）',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: onFetchAll,
+              icon: const Icon(Icons.download),
+              label: const Text('株価取得'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (controller.recommendations.isEmpty)
+          const Card(
+            child: ListTile(
+              title: Text('おすすめ銘柄はまだありません'),
+              subtitle: Text('株価取得後に通知候補が表示されます。'),
+            ),
+          )
+        else
+          ...controller.recommendations
+              .map((item) => RecommendationCard(item: item, controller: controller)),
+        const SizedBox(height: 16),
+        const ExitRulesCard(),
+      ],
+    );
+  }
+}
+
+class ManualFetchTab extends StatelessWidget {
+  const ManualFetchTab({
+    required this.controller,
+    required this.onFetchAll,
+    required this.onFetchMissing,
+    super.key,
+  });
+
+  final KabuController controller;
+  final VoidCallback onFetchAll;
+  final VoidCallback onFetchMissing;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('手動で株価取得', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('最終取得: ${formatDateTime(controller.lastFetchedAt)}'),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: onFetchAll,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('全銘柄を取得'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: onFetchMissing,
+                      icon: const Icon(Icons.update),
+                      label: const Text('未取得のみ更新'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (controller.bestRecommendation == null)
+          const Card(
+            child: ListTile(
+              title: Text('1番おすすめは未判定'),
+              subtitle: Text('株価取得後に表示されます。'),
+            ),
+          )
+        else
+          Card(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.emoji_events),
+              title: Text(
+                '1番おすすめ: '
+                '${controller.bestRecommendation!.stock.code} '
+                '${controller.bestRecommendation!.stock.name}',
+              ),
+              subtitle: Text(controller.bestRecommendation!.reason),
+            ),
+          ),
+        const SizedBox(height: 12),
+        Text('銘柄取得ステータス', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ...controller.stocks.map((stock) {
+          final judgement = controller.engine.judge(stock);
+          return Card(
+            child: ListTile(
+              title: Text('${stock.code} ${stock.name}'),
+              subtitle: Text(
+                '適合: ${judgement.matchedRuleCount}/${RecommendationEngine.totalRules} '
+                '取得: ${formatDateTime(stock.lastFetchedAt)}',
+              ),
+              trailing: FetchedStatusChip(lastFetchedAt: stock.lastFetchedAt),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class ProfitTab extends StatelessWidget {
+  const ProfitTab({required this.controller, super.key});
+
+  final KabuController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalPosition = controller.recommendations.fold<double>(
+      0,
+      (sum, recommendation) => sum + recommendation.positionYen,
+    );
+    final totalMaxLoss = controller.recommendations.fold<double>(
+      0,
+      (sum, recommendation) => sum + recommendation.maxLossYen,
+    );
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('収益サマリー', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('合計建玉目安: ${totalPosition.toStringAsFixed(0)}円'),
+                Text('想定最大損失: ${totalMaxLoss.toStringAsFixed(0)}円'),
+                Text('最終更新: ${formatDateTime(controller.lastFetchedAt)}'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (controller.recommendations.isEmpty)
+          const Card(
+            child: ListTile(
+              title: Text('収益確認データがありません'),
+              subtitle: Text('手動取得または定時取得後に確認できます。'),
+            ),
+          )
+        else
+          ...controller.recommendations.map(
+            (item) => Card(
+              child: ListTile(
+                title: Text('${item.stock.code} ${item.stock.name}'),
+                subtitle: Text(
+                  '建玉: ${item.positionYen.toStringAsFixed(0)}円 '
+                  '/ 想定最大損失: ${item.maxLossYen.toStringAsFixed(0)}円',
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class SettingsTab extends StatelessWidget {
+  const SettingsTab({
+    required this.controller,
+    required this.onSendTestNotification,
+    super.key,
+  });
+
+  final KabuController controller;
+  final VoidCallback onSendTestNotification;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('定時バックグラウンド取得', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text('毎朝 08:00 に自動取得を実行します。'),
+                Text('次回予定: ${formatDateTime(controller.nextScheduledFetchAt)}'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: onSendTestNotification,
+          icon: const Icon(Icons.notifications_active),
+          label: const Text('通知テストを送信'),
+        ),
+        const SizedBox(height: 12),
+        Text('通知履歴', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (controller.notifications.isEmpty)
+          const Card(
+            child: ListTile(
+              title: Text('通知はまだありません'),
+            ),
+          )
+        else
+          ...controller.notifications.map(
+            (notice) => Card(
+              child: ListTile(
+                leading: const Icon(Icons.notifications),
+                title: Text(notice.title),
+                subtitle: Text('${notice.message}\n${formatDateTime(notice.createdAt)}'),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -71,8 +395,7 @@ class StrategySummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('前提',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('前提', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text('・日本株（東証）一般信用ショート'),
             const Text('・決算前日引けIN → 決算当日前場引けOUT'),
@@ -119,17 +442,24 @@ class ExitRulesCard extends StatelessWidget {
 }
 
 class RecommendationCard extends StatelessWidget {
-  const RecommendationCard({required this.item, super.key});
+  const RecommendationCard({
+    required this.item,
+    required this.controller,
+    super.key,
+  });
 
   final Recommendation item;
+  final KabuController controller;
 
   @override
   Widget build(BuildContext context) {
+    final judgement = controller.engine.judge(item.stock);
     return Card(
       child: ListTile(
         title: Text('${item.stock.code} ${item.stock.name}'),
         subtitle: Text(
           '通知理由: ${item.reason}\n'
+          '適合: ${judgement.matchedRuleCount}/${RecommendationEngine.totalRules} '
           '建玉目安: ${item.positionYen.toStringAsFixed(0)}円 / '
           '概算株数: ${item.shares}株 / 想定最大損失: ${item.maxLossYen.toStringAsFixed(0)}円',
         ),
@@ -139,6 +469,132 @@ class RecommendationCard extends StatelessWidget {
   }
 }
 
+class FetchedStatusChip extends StatelessWidget {
+  const FetchedStatusChip({required this.lastFetchedAt, super.key});
+
+  final DateTime? lastFetchedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFetched = lastFetchedAt != null;
+    return Chip(
+      label: Text(isFetched ? '取得済み' : '未取得'),
+      backgroundColor: isFetched
+          ? Theme.of(context).colorScheme.secondaryContainer
+          : Theme.of(context).colorScheme.errorContainer,
+    );
+  }
+}
+
+class KabuController extends ChangeNotifier {
+  KabuController({
+    RecommendationEngine? engine,
+    List<StockSnapshot>? initialStocks,
+    DateTime Function()? nowProvider,
+  })  : engine = engine ?? RecommendationEngine(),
+        _nowProvider = nowProvider ?? DateTime.now,
+        _stocks = List<StockSnapshot>.from(initialStocks ?? sampleStocks),
+        nextScheduledFetchAt = _computeNextScheduledFetch(
+          (nowProvider ?? DateTime.now)(),
+        );
+
+  static const int morningFetchHour = 8;
+
+  final RecommendationEngine engine;
+  final DateTime Function() _nowProvider;
+  List<StockSnapshot> _stocks;
+
+  List<Recommendation> recommendations = const [];
+  Recommendation? bestRecommendation;
+  List<AppNotification> notifications = const [];
+  DateTime? lastFetchedAt;
+  DateTime nextScheduledFetchAt;
+
+  List<StockSnapshot> get stocks => List.unmodifiable(_stocks);
+
+  int fetchPrices({bool onlyMissing = false, bool fromSchedule = false}) {
+    final now = _nowProvider();
+    var updatedCount = 0;
+    _stocks = _stocks.map((stock) {
+      if (onlyMissing && stock.lastFetchedAt != null) {
+        return stock;
+      }
+      updatedCount += 1;
+      return stock.copyWith(lastFetchedAt: now);
+    }).toList(growable: false);
+
+    if (updatedCount == 0) {
+      return 0;
+    }
+
+    _afterFetch(now, fromSchedule: fromSchedule);
+    notifyListeners();
+    return updatedCount;
+  }
+
+  bool runScheduledIfDue() {
+    final now = _nowProvider();
+    if (now.isBefore(nextScheduledFetchAt)) {
+      return false;
+    }
+    fetchPrices(fromSchedule: true);
+    return true;
+  }
+
+  void sendTestNotification() {
+    final now = _nowProvider();
+    notifications = [
+      AppNotification(
+        title: '通知テスト',
+        message: '通知が正常に届いています。',
+        createdAt: now,
+      ),
+      ...notifications,
+    ];
+    notifyListeners();
+  }
+
+  void _afterFetch(DateTime fetchedAt, {required bool fromSchedule}) {
+    recommendations = engine.buildRecommendations(_stocks);
+    bestRecommendation = recommendations.isEmpty ? null : recommendations.first;
+    lastFetchedAt = fetchedAt;
+    nextScheduledFetchAt = _computeNextScheduledFetch(fetchedAt);
+
+    if (recommendations.isNotEmpty) {
+      notifications = [
+        AppNotification(
+          title: fromSchedule ? '定時おすすめ通知' : 'おすすめ通知',
+          message: 'おすすめ銘柄: '
+              '${recommendations.first.stock.code} '
+              '${recommendations.first.stock.name}',
+          createdAt: fetchedAt,
+        ),
+        ...notifications,
+      ];
+    }
+  }
+
+  static DateTime _computeNextScheduledFetch(DateTime now) {
+    final todayAtMorning = DateTime(now.year, now.month, now.day, morningFetchHour);
+    if (now.isBefore(todayAtMorning)) {
+      return todayAtMorning;
+    }
+    return todayAtMorning.add(const Duration(days: 1));
+  }
+}
+
+class AppNotification {
+  const AppNotification({
+    required this.title,
+    required this.message,
+    required this.createdAt,
+  });
+
+  final String title;
+  final String message;
+  final DateTime createdAt;
+}
+
 class RecommendationEngine {
   static const double accountSizeYen = 300000;
   static const double maxLossPerTradeYen = 900;
@@ -146,6 +602,7 @@ class RecommendationEngine {
   static const double maxBorrowFeePercent = 5;
   static const double recommendedMinPositionYen = 50000;
   static const double maxPositionYen = 60000;
+  static const int totalRules = 16;
 
   CandidateJudgement judge(StockSnapshot stock) {
     final violations = <String>[];
@@ -235,7 +692,7 @@ class RecommendationEngine {
             '5日+${item.stock.priceChange5dPercent.toStringAsFixed(1)}%、'
             'RSI${item.stock.rsi14.toStringAsFixed(1)}',
       );
-    }).toList();
+    }).toList(growable: false);
   }
 }
 
@@ -260,6 +717,7 @@ class StockSnapshot {
     required this.isExDividendWindow,
     required this.isInBuybackExclusionList,
     required this.roundTripCostPercent,
+    this.lastFetchedAt,
   });
 
   final String code;
@@ -281,6 +739,58 @@ class StockSnapshot {
   final bool isExDividendWindow;
   final bool isInBuybackExclusionList;
   final double roundTripCostPercent;
+  final DateTime? lastFetchedAt;
+
+  StockSnapshot copyWith({
+    String? code,
+    String? name,
+    bool? isPrimeMarket,
+    double? marketCapBillionYen,
+    double? avgTurnoverBillionYen20d,
+    double? priceYen,
+    double? borrowFeeAnnualPercent,
+    double? priceChange20dPercent,
+    double? priceChange5dPercent,
+    double? closeAboveMa20Percent,
+    double? rsi14,
+    double? pullbackFromHighToClosePercent,
+    bool? vwapAvailable,
+    bool? isCloseBelowVwap,
+    bool? hasWideSpread,
+    bool? isSpeculativeSmallCap,
+    bool? isExDividendWindow,
+    bool? isInBuybackExclusionList,
+    double? roundTripCostPercent,
+    DateTime? lastFetchedAt,
+  }) {
+    return StockSnapshot(
+      code: code ?? this.code,
+      name: name ?? this.name,
+      isPrimeMarket: isPrimeMarket ?? this.isPrimeMarket,
+      marketCapBillionYen: marketCapBillionYen ?? this.marketCapBillionYen,
+      avgTurnoverBillionYen20d:
+          avgTurnoverBillionYen20d ?? this.avgTurnoverBillionYen20d,
+      priceYen: priceYen ?? this.priceYen,
+      borrowFeeAnnualPercent:
+          borrowFeeAnnualPercent ?? this.borrowFeeAnnualPercent,
+      priceChange20dPercent:
+          priceChange20dPercent ?? this.priceChange20dPercent,
+      priceChange5dPercent: priceChange5dPercent ?? this.priceChange5dPercent,
+      closeAboveMa20Percent: closeAboveMa20Percent ?? this.closeAboveMa20Percent,
+      rsi14: rsi14 ?? this.rsi14,
+      pullbackFromHighToClosePercent:
+          pullbackFromHighToClosePercent ?? this.pullbackFromHighToClosePercent,
+      vwapAvailable: vwapAvailable ?? this.vwapAvailable,
+      isCloseBelowVwap: isCloseBelowVwap ?? this.isCloseBelowVwap,
+      hasWideSpread: hasWideSpread ?? this.hasWideSpread,
+      isSpeculativeSmallCap: isSpeculativeSmallCap ?? this.isSpeculativeSmallCap,
+      isExDividendWindow: isExDividendWindow ?? this.isExDividendWindow,
+      isInBuybackExclusionList:
+          isInBuybackExclusionList ?? this.isInBuybackExclusionList,
+      roundTripCostPercent: roundTripCostPercent ?? this.roundTripCostPercent,
+      lastFetchedAt: lastFetchedAt ?? this.lastFetchedAt,
+    );
+  }
 }
 
 class CandidateJudgement {
@@ -293,6 +803,9 @@ class CandidateJudgement {
   final bool isRecommended;
   final List<String> violations;
   final double score;
+
+  int get matchedRuleCount =>
+      (RecommendationEngine.totalRules - violations.length).clamp(0, RecommendationEngine.totalRules);
 }
 
 class Recommendation {
@@ -309,6 +822,15 @@ class Recommendation {
   final int shares;
   final double maxLossYen;
   final String reason;
+}
+
+String formatDateTime(DateTime? dateTime) {
+  if (dateTime == null) {
+    return '未取得';
+  }
+  String twoDigits(int value) => value.toString().padLeft(2, '0');
+  return '${dateTime.year}/${twoDigits(dateTime.month)}/${twoDigits(dateTime.day)} '
+      '${twoDigits(dateTime.hour)}:${twoDigits(dateTime.minute)}';
 }
 
 const List<StockSnapshot> sampleStocks = [

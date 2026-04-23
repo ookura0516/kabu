@@ -30,6 +30,7 @@ void main() {
 
     expect(judgement.isRecommended, isTrue);
     expect(judgement.violations, isEmpty);
+    expect(judgement.matchedRuleCount, RecommendationEngine.totalRules);
   });
 
   test('buildRecommendations enforces max 2 symbols and risk cap', () {
@@ -55,5 +56,31 @@ void main() {
       lessThanOrEqualTo(RecommendationEngine.maxPositionYen),
     );
     expect(recommendations.first.maxLossYen, closeTo(900, 0.01));
+  });
+
+  test('fetchPrices updates missing data and adds notification when recommended exists', () {
+    final now = DateTime(2026, 1, 1, 9);
+    final controller = KabuController(nowProvider: () => now);
+
+    final updated = controller.fetchPrices(onlyMissing: true);
+
+    expect(updated, sampleStocks.length);
+    expect(controller.stocks.every((stock) => stock.lastFetchedAt == now), isTrue);
+    expect(controller.notifications, isNotEmpty);
+    expect(controller.notifications.first.title, 'おすすめ通知');
+    expect(controller.bestRecommendation, isNotNull);
+  });
+
+  test('runScheduledIfDue triggers scheduled fetch and notification', () {
+    var now = DateTime(2026, 1, 1, 8, 0);
+    final controller = KabuController(nowProvider: () => now);
+
+    final executed = controller.runScheduledIfDue();
+
+    expect(executed, isTrue);
+    expect(controller.lastFetchedAt, now);
+    expect(controller.notifications.first.title, '定時おすすめ通知');
+    now = DateTime(2026, 1, 1, 8, 1);
+    expect(controller.runScheduledIfDue(), isFalse);
   });
 }
