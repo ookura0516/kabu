@@ -804,8 +804,12 @@ class CandidateJudgement {
   final List<String> violations;
   final double score;
 
-  int get matchedRuleCount =>
-      (RecommendationEngine.totalRules - violations.length).clamp(0, RecommendationEngine.totalRules);
+  int get matchedRuleCount {
+    final violationCount = violations.length > RecommendationEngine.totalRules
+        ? RecommendationEngine.totalRules
+        : violations.length;
+    return RecommendationEngine.totalRules - violationCount;
+  }
 }
 
 class Recommendation {
